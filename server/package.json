@@ -1,0 +1,22 @@
+{
+  "name": "mouzer-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LAN host agent: captures the PC screen and injects mouse/keyboard input from a mobile browser.",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "selftest": "node scripts/selftest.js"
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.0",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  }
+}

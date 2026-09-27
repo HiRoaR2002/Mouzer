@@ -1,0 +1,866 @@
+/*
+ * Mouzer client.
+ *
+ * The visual rules, so they stay consistent as things get added:
+ *   - Monochrome by default. One accent, and only ever for state: live, armed,
+ *     focused. Nothing is coloured for decoration.
+ *   - Separation comes from surface lightness and hairline borders, never from
+ *     drop shadows or glows. The video is the only high-contrast object on
+ *     screen and it should stay that way.
+ *   - Controls sit at the edges. The middle belongs to the PC's screen.
+ */
+
+:root {
+  --bg: #0a0a0b;
+  --surface: #131316;
+  --raised: #1c1c20;
+  --raised-2: #24242a;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --text: #ededf0;
+  --muted: #8e8e96;
+  --faint: #5f5f68;
+  --accent: #5b7ef5;
+  --ok: #3ecf8e;
+  --warn: #e0a33e;
+  --bad: #e5484d;
+
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+
+  --radius: 10px;
+  --micro: 10.5px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13.5px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: var(--safe-t);
+}
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  height: 46px;
+  padding: 0 8px 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-id {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.topbar-host {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-state {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--faint);
+}
+.dot-ok {
+  background: var(--ok);
+}
+.dot-warn {
+  background: var(--warn);
+}
+.dot-busy {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.icon-btn:active:not(:disabled) {
+  background: var(--raised-2);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+}
+
+/* ---------- stage ---------- */
+
+.stage {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * The wrapper inside is sized from the stream's own aspect ratio (see
+ * ScreenView), so it is never a mismatched shape that the image has to be
+ * letterboxed inside. The viewport is a plain centring box; it does not decide
+ * any dimensions.
+ */
+.viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10px 10px 0;
+}
+
+.screen-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* Every touch inside the frame is a click; the browser must not claim it. */
+  touch-action: none;
+}
+
+.screen-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.screen-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.screen-dims {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.screen-note {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- touchpad ---------- */
+
+.touchpad {
+  position: relative;
+  flex: 1 1 34%;
+  min-height: 88px;
+  margin: 10px 10px 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  touch-action: none;
+  overflow: hidden;
+}
+.touchpad.is-disabled {
+  opacity: 0.4;
+}
+
+.touchpad-hint {
+  position: absolute;
+  inset: auto 0 10px 0;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: var(--micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+/* ---------- mode switch ---------- */
+
+.modeswitch {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 14px 10px;
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.seg button {
+  min-width: 88px;
+  padding: 7px 16px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.seg button:hover:not(:disabled):not(.is-active) {
+  color: var(--text);
+}
+.seg button.is-active {
+  background: var(--raised-2);
+  color: var(--text);
+}
+.seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.modeswitch-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+/* ---------- key rows ---------- */
+
+.keys {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.armed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.armed-clear {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.key-row {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.key {
+  flex: 1 1 auto;
+  min-width: 44px;
+  min-height: 38px;
+  padding: 7px 4px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.key:hover:not(:disabled) {
+  background: var(--raised-2);
+}
+.key:active:not(:disabled) {
+  background: #2c2c33;
+}
+.key:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.key-wide {
+  flex: 2 1 auto;
+}
+
+/* The only place a modifier uses the accent: an armed key has to be
+   unmistakable, because the next tap is being applied through it. */
+.key-mod {
+  font-weight: 500;
+  color: var(--muted);
+}
+.key-mod.is-held {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.key-more {
+  flex: 0 0 40px;
+  min-width: 40px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.key-more.is-open {
+  color: var(--text);
+}
+
+/* ---------- bottom bar ---------- */
+
+.bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px calc(7px + var(--safe-b));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.bar-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bar-btn:hover:not(:disabled) {
+  background: var(--raised-2);
+}
+.bar-btn.is-on {
+  background: var(--raised-2);
+  border-color: var(--line-2);
+}
+.bar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bar-hint {
+  font-size: 11.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Kept in the layout and focusable: display:none would stop the on-screen
+   keyboard from being able to attach to it at all. */
+.hidden-capture {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  z-index: 1;
+}
+
+/* ---------- pairing ---------- */
+
+.pair-screen,
+.overlay-note {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  z-index: 60;
+}
+
+.overlay-note {
+  flex-direction: column;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 13.5px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  z-index: 50;
+}
+
+.pair-card {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+.pair-card h1 {
+  font-size: 19px;
+  font-weight: 550;
+  margin: 0 0 6px;
+}
+
+.pair-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 26px;
+  line-height: 1.55;
+}
+.pair-sub code {
+  background: var(--raised);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+
+.pin-dots {
+  display: flex;
+  gap: 9px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.pin-dots span {
+  width: 13px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  transition: background 0.12s, border-color 0.12s;
+}
+.pin-dots span.is-filled {
+  background: var(--text);
+  border-color: var(--text);
+}
+.pin-dots.is-shake {
+  animation: shake 0.36s;
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+.pair-error {
+  color: var(--bad);
+  font-size: 12.5px;
+  margin: 0 0 14px;
+  min-height: 17px;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  max-width: 268px;
+  margin: 0 auto;
+}
+.keypad button {
+  height: 50px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.keypad button:active:not(:disabled) {
+  background: var(--raised-2);
+}
+.keypad button:disabled {
+  opacity: 0.5;
+}
+.keypad .keypad-alt {
+  background: transparent;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+/* ---------- settings sheet ---------- */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 70;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  padding: 0 18px calc(22px + var(--safe-b));
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 0 12px;
+  margin-bottom: 4px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.sheet-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 550;
+}
+
+.sheet-close {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 13px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.section {
+  margin: 22px 0 12px;
+  font-size: var(--micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.section:first-of-type {
+  margin-top: 16px;
+}
+
+.preset-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.preset {
+  flex: 1;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.preset.is-active {
+  background: var(--raised-2);
+  border-color: var(--line-2);
+  color: var(--text);
+}
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+.field-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+.field-label b {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  width: 100%;
+  height: 26px;
+  accent-color: var(--accent);
+  background: transparent;
+}
+
+select {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.readout div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  background: var(--raised);
+  font-size: 12.5px;
+}
+.readout span {
+  color: var(--faint);
+}
+.readout b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.note b {
+  color: var(--muted);
+  font-weight: 500;
+}
+.note-warn {
+  color: var(--warn);
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(96px + var(--safe-b));
+  background: var(--raised-2);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  z-index: 65;
+  max-width: 90vw;
+  text-align: center;
+}
+
+/* ---------- landscape / short viewports ----------
+ *
+ * Height is the scarce resource here: a 16:9 frame on a landscape phone can
+ * never be as wide as the viewport, so every pixel of vertical space is spent
+ * on the picture. The key rows collapse to one compact strip, the touchpad
+ * gives up most of its height, and the picture is centred in what is left.
+ */
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .viewport {
+    align-items: center;
+    padding: 8px 8px 0;
+  }
+  .touchpad {
+    flex: 0 0 84px;
+    min-height: 0;
+    margin: 8px 8px 0;
+  }
+  .touchpad-hint span:nth-child(3) {
+    display: none;
+  }
+  .modeswitch {
+    flex-direction: row;
+    gap: 12px;
+    padding: 8px 12px;
+  }
+  .modeswitch-hint {
+    text-align: left;
+  }
+  .key {
+    min-width: 40px;
+    min-height: 34px;
+    padding: 5px 4px;
+    font-size: 12.5px;
+  }
+  .key-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .key-row::-webkit-scrollbar {
+    display: none;
+  }
+  .keys {
+    padding: 6px 8px;
+    gap: 5px;
+  }
+  .bar {
+    padding: 5px 8px calc(5px + var(--safe-b));
+  }
+  .bar-hint {
+    display: none;
+  }
+}
+
+@media (min-width: 760px) {
+  .viewport {
+    padding: 14px 14px 0;
+  }
+  .keys {
+    padding: 10px 14px;
+  }
+  .key {
+    min-width: 56px;
+    min-height: 40px;
+  }
+  .touchpad {
+    margin: 14px 14px 0;
+  }
+}
